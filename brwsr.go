@@ -45,7 +45,7 @@ func init() {
 	documentBodyStyle.Set("margin", 0)
 
 	// load libraries
-	<-jsutil.Lib("https://github.com/mrmiguu/brwsr/lib/phaser.min.js")
+	<-jsutil.Lib("https://github.com/mrmiguu/brwsr/blob/master/lib/phaser.min.js")
 
 	phaser = js.Global.Get("Phaser")
 }
