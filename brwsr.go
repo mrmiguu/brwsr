@@ -15,13 +15,16 @@ var (
 
 	phaser    *js.Object
 	game      *js.Object
+	gameScale *js.Object
 	gameLoad  *js.Object
 	gameAdd   *js.Object
 	gameWorld *js.Object
+	sck       *js.Object
 
 	width      int
 	height     int
-	addr       string
+	address    string
+	bg         string
 	taptostart string
 	username   string
 	loading    *js.Object
@@ -51,19 +54,20 @@ func init() {
 }
 
 // New creates a new browser instance.
-func New(w, h int, url string) {
+func New(w, h int, addr string) {
 	width, height = w, h
+	address = addr
 	game = phaser.Get("Game").New(w, h, phaser.Get("AUTO"), "phaser-example", js.M{"preload": preload, "create": create})
 }
 
 func preload() {
 	game.Get("canvas").Set("oncontextmenu", func(e *js.Object) { e.Call("preventDefault") })
-	scale := game.Get("scale")
+	gameScale = game.Get("scale")
 	showAll := phaser.Get("ScaleManager").Get("SHOW_ALL")
-	scale.Set("scaleMode", showAll)
-	scale.Set("fullScreenScaleMode", showAll)
-	scale.Set("pageAlignHorizontally", true)
-	scale.Set("pageAlignVertically", true)
+	gameScale.Set("scaleMode", showAll)
+	gameScale.Set("fullScreenScaleMode", showAll)
+	gameScale.Set("pageAlignHorizontally", true)
+	gameScale.Set("pageAlignVertically", true)
 
 	gameLoad = game.Get("load")
 	gameLoad.Call("spritesheet", "loading", "res/loading.png", width, height)
@@ -74,10 +78,12 @@ func create() {
 	gameWorld = game.Get("world")
 
 	loading = newSprite("loading")
+	loading.Set("visible", true)
 	loading.Set("alpha", 0)
 	fadeIn := newTween(loading, js.M{"alpha": 1}, 1333)
 	fadeIn.Call("start")
 
+	bg = "res/bg.png"
 	taptostart = "res/taptostart.png"
 	username = "res/username.png"
 
@@ -90,6 +96,7 @@ func create() {
 	spin.Get("onLoop").Call("add", onSpin)
 	spunAndLoaded := onSpinLoop(spun, loaded)
 
+	gameLoad.Call("image", bg, bg)
 	gameLoad.Call("spritesheet", taptostart, taptostart, width, height)
 	gameLoad.Call("spritesheet", username, username, 360, 216)
 
@@ -97,20 +104,11 @@ func create() {
 
 	onSpinAndLoad(spunAndLoaded)
 
-	// button = gameAdd.Call("button", game.Get("world").Get("centerX"), game.Get("world").Get("centerY"), "button", func() {
-	// 	ws.Call("send", "Hello!")
-	// }, nil, 1, 0, 2)
-	// button.Get("anchor").Call("setTo", 0.5, 0.5)
-
-	// var text = "- phaser -\n with a sprinkle of \n pixi dust."
-	// var style = js.M{"font": "65px Arial", "fill": "#ff0044", "align": "center"}
-	// t = gameAdd.Call("text", 0, 0, text, style)
-
-	// ws = js.Global.Get("WebSocket").New("ws://" + addr + "/connected")
-	// ws.Set("onopen", onConnectionOpen)
-	// ws.Set("onclose", onConnectionClose)
-	// ws.Set("onmessage", onConnectionMessage)
-	// ws.Set("onerror", onConnectionError)
+	sck = js.Global.Get("WebSocket").New("ws://" + address + "/connected")
+	sck.Set("onopen", onConnectionOpen)
+	sck.Set("onclose", onConnectionClose)
+	sck.Set("onmessage", onConnectionMessage)
+	sck.Set("onerror", onConnectionError)
 }
 
 func onSpinLoop(spun, loaded <-chan bool) <-chan bool {
@@ -135,6 +133,7 @@ func onSpinAndLoad(spunAndLoaded <-chan bool) {
 		spin.Call("stop")
 		loading.Set("visible", false)
 
+		bgSpr := newSprite(bg)
 		midtext = gameAdd.Call("text", 0, 0, "_", js.M{
 			"font":  "65px Arial",
 			"fill":  "#ffffff",
@@ -143,6 +142,7 @@ func onSpinAndLoad(spunAndLoaded <-chan bool) {
 
 		goBtn, goHit = newButton(taptostart)
 		goBtn.Set("visible", true)
+		bgSpr.Set("visible", true)
 		onGo()
 	}()
 }
@@ -150,6 +150,7 @@ func onSpinAndLoad(spunAndLoaded <-chan bool) {
 func onGo() {
 	go func() {
 		<-goHit
+		gameScale.Call("startFullScreen")
 		usrBtn, usrHit := newButton(username)
 		usrBtn.Set("visible", true)
 		goBtn.Set("visible", false)
@@ -162,6 +163,7 @@ func onGo() {
 		}()
 
 		<-usrHit
+		sck.Call("send", midtext.Get("text"))
 		jsutil.CloseKeyboard()
 		usrBtn.Set("visible", false)
 		midtext.Call("setText", "")
@@ -176,6 +178,7 @@ func newTween(o *js.Object, params js.M, ms int) *js.Object {
 
 func newSprite(id string) *js.Object {
 	spr := gameAdd.Call("sprite", gameWorld.Get("centerX"), gameWorld.Get("centerY"), id)
+	spr.Set("visible", false)
 	spr.Get("anchor").Call("setTo", 0.5, 0.5)
 	return spr
 }
@@ -193,23 +196,22 @@ func newButton(url string) (*js.Object, <-chan bool) {
 	return btn, hit
 }
 
-// func onConnectionOpen(evt *js.Object) {
-// 	print("Connected")
-// }
+func onConnectionOpen(evt *js.Object) {
+	alert("Connected")
+}
 
-// func onConnectionClose(evt *js.Object) {
-// 	print("Disconnected")
-// 	ws = nil
-// }
+func onConnectionClose(evt *js.Object) {
+	alert("Disconnected")
+	sck = nil
+}
 
-// func onConnectionMessage(evt *js.Object) {
-// 	print("Server: " + evt.Get("data").String())
-// 	button.Call("setFrames", 4, 3, 5)
-// }
+func onConnectionMessage(evt *js.Object) {
+	alert("Server: " + evt.Get("data").String())
+}
 
-// func onConnectionError(evt *js.Object) {
-// 	print("Error: " + evt.Get("data").String())
-// }
+func onConnectionError(evt *js.Object) {
+	alert("Error: " + evt.Get("data").String())
+}
 
 // func print(message interface{}) {
 // 	t.Set("text", message)
