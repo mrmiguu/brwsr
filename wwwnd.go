@@ -2,6 +2,7 @@ package wwwnd
 
 import (
 	"sync"
+	"time"
 
 	"github.com/gopherjs/gopherjs/js"
 	"github.com/mrmiguu/jsutil"
@@ -11,6 +12,7 @@ var (
 	phaser *js.Object
 	window *Window
 	ready  = make(chan bool, 1)
+	fps    = time.Tick(250 * time.Millisecond)
 )
 
 type Window struct {
@@ -58,7 +60,11 @@ func New(width, height int) *Window {
 	window = &Window{
 		width:  width,
 		height: height,
-		game:   phaser.Get("Game").New(width, height, phaser.Get("AUTO"), "", js.M{"preload": preload, "create": create}),
+		game: phaser.Get("Game").New(width, height, phaser.Get("AUTO"), "", js.M{
+			"preload": preload,
+			"create":  create,
+			"render":  render,
+		}),
 	}
 	window.images.m = map[string]*Image{}
 
@@ -115,6 +121,19 @@ func create() {
 	close(ready)
 }
 
+func render() {
+	go renderLoading()
+}
+
+func renderLoading() {
+	<-fps
+	window.images.RLock()
+	for _, i := range window.images.m {
+		window.game.Get("debug").Call("geom", i.js.o, "rgba(224,224,224,0.5)")
+	}
+	window.images.RUnlock()
+}
+
 func (w *Window) addImage(key string) {
 	o := w.add.Call("sprite", w.centerx, w.centery, key)
 	o.Get("anchor").Call("setTo", 0.5, 0.5)
@@ -139,18 +158,23 @@ func (w *Window) addImage(key string) {
 
 func (w *Window) NewImage(url string, width, height int) *Image {
 	var i Image
-	i.js.o = phaser.Get("Rectangle").New(
-		w.width/2-width/2, w.height/2-height/2,
-		width, height,
-	)
 
 	w.images.Lock()
 	defer w.images.Unlock()
 
 	if _, exists := w.images.m[url]; exists {
-		w.addImage(url)
+		o := w.add.Call("sprite", w.centerx, w.centery, url)
+		o.Get("anchor").Call("setTo", 0.5, 0.5)
+		o.Set("width", width)
+		o.Set("height", height)
+
 		return &i
 	}
+
+	i.js.o = phaser.Get("Rectangle").New(
+		w.width/2-width/2, w.height/2-height/2,
+		width, height,
+	)
 
 	w.images.m[url] = &i
 
