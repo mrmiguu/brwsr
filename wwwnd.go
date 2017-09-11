@@ -25,7 +25,11 @@ type Window struct {
 
 	images struct {
 		sync.RWMutex
-		m map[string]*Image
+		m map[string]struct {
+			i     *Image
+			donut *js.Object
+			anim  *js.Object
+		}
 	}
 }
 
@@ -66,7 +70,11 @@ func New(width, height int) *Window {
 			"render":  render,
 		}),
 	}
-	window.images.m = map[string]*Image{}
+	window.images.m = make(map[string]struct {
+		i     *Image
+		donut *js.Object
+		anim  *js.Object
+	})
 
 	<-ready
 	return window
@@ -83,7 +91,7 @@ func preload() {
 	scale.Set("pageAlignVertically", true)
 
 	window.load = window.game.Get("load")
-	// window.load.Call("spritesheet", "loading", "res/loading.png", window.width, window.height)
+	window.load.Call("spritesheet", "donut", "loading.png", 25, 25, 8)
 }
 
 func create() {
@@ -92,7 +100,6 @@ func create() {
 	window.centerx = world.Get("centerX").Int()
 	window.centery = world.Get("centerY").Int()
 
-	// loading = window.NewImage("loading")
 	// loading.Set("visible", true)
 	// loading.Set("alpha", 0)
 	// fadeIn := newTween(loading, js.M{"alpha": 1}, 1333)
@@ -107,11 +114,6 @@ func create() {
 	window.load.Get("onFileComplete").Call("add", func(_, key *js.Object) {
 		window.addImage(key.String())
 	})
-
-	// spin = loading.Get("animations").Call("add", "spin")
-	// spin.Call("play", 9, true)
-	// onSpin, _ := jsutil.Callback()
-	// spin.Get("onLoop").Call("add", onSpin)
 
 	// window.load.Call("image", bg, bg)
 	// window.load.Call("spritesheet", taptostart, taptostart, w, h)
@@ -128,8 +130,8 @@ func render() {
 func renderLoading() {
 	<-fps
 	window.images.RLock()
-	for _, i := range window.images.m {
-		window.game.Get("debug").Call("geom", i.js.o, "rgba(224,224,224,0.5)")
+	for _, ld := range window.images.m {
+		window.game.Get("debug").Call("geom", ld.i.js.o, "rgba(224,224,224,0.5)")
 	}
 	window.images.RUnlock()
 }
@@ -141,13 +143,15 @@ func (w *Window) addImage(key string) {
 	w.images.Lock()
 	defer w.images.Unlock()
 
-	i := w.images.m[key]
-	o.Set("width", i.js.o.Get("width"))
-	o.Set("height", i.js.o.Get("height"))
+	ld := w.images.m[key]
+	o.Set("width", ld.i.js.o.Get("width"))
+	o.Set("height", ld.i.js.o.Get("height"))
+	ld.donut.Set("visible", false)
+	ld.anim.Call("stop")
 
-	i.js.Lock()
-	i.js.o = o
-	i.js.Unlock()
+	ld.i.js.Lock()
+	ld.i.js.o = o
+	ld.i.js.Unlock()
 }
 
 // func newTween(o *js.Object, params js.M, ms int) *js.Object {
@@ -176,7 +180,16 @@ func (w *Window) NewImage(url string, width, height int) *Image {
 		width, height,
 	)
 
-	w.images.m[url] = &i
+	donut := w.add.Call("sprite", w.centerx, w.centery, "donut")
+	donut.Get("anchor").Call("setTo", 0.5, 0.5)
+	anim := donut.Get("animations").Call("add", "spin")
+	anim.Call("play", 8, true)
+
+	ld := w.images.m[url]
+	ld.i = &i
+	ld.donut = donut
+	ld.anim = anim
+	w.images.m[url] = ld
 
 	w.load.Call("image", url, url)
 	w.load.Call("start")
