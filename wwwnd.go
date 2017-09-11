@@ -180,8 +180,10 @@ func (w *Window) NewImage(url string, width, height int) *Image {
 		width, height,
 	)
 
-	donut := w.add.Call("sprite", w.centerx, w.centery, "donut")
+	donut := w.add.Call("sprite", "donut")
 	donut.Get("anchor").Call("setTo", 0.5, 0.5)
+	donut.Set("x", w.centerx)
+	donut.Set("y", w.centery)
 	anim := donut.Get("animations").Call("add", "spin")
 	anim.Call("play", 8, true)
 
