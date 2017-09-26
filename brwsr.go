@@ -1,4 +1,4 @@
-package wwwnd
+package brwsr
 
 import (
 	"sync"
