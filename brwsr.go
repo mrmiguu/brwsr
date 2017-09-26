@@ -28,9 +28,8 @@ type Browser struct {
 	images struct {
 		sync.RWMutex
 		m map[string]struct {
-			i     *Image
-			donut *js.Object
-			anim  *js.Object
+			i    *Image
+			anim *js.Object
 		}
 	}
 }
@@ -38,7 +37,8 @@ type Browser struct {
 type Image struct {
 	js struct {
 		sync.RWMutex
-		o *js.Object
+		o     *js.Object
+		donut *js.Object
 	}
 }
 
@@ -72,9 +72,8 @@ func New(width, height int) *Browser {
 		}),
 	}
 	browser.images.m = make(map[string]struct {
-		i     *Image
-		donut *js.Object
-		anim  *js.Object
+		i    *Image
+		anim *js.Object
 	})
 
 	<-ready
@@ -114,23 +113,22 @@ func create() {
 }
 
 func (b *Browser) addImage(key string) {
-	o := b.add.Call("sprite", b.centerx, b.centery, key)
-	o.Get("anchor").Call("setTo", 0.5, 0.5)
-	t := fade(o, false, ShowDelayMilli)
-
 	b.images.Lock()
 	ld := b.images.m[key]
 	defer b.images.Unlock()
 	ld.i.js.Lock()
 	defer ld.i.js.Unlock()
 
+	o := b.add.Call("sprite", ld.i.js.o.Get("x"), ld.i.js.o.Get("y"), key)
+	o.Get("anchor").Call("setTo", 0.5, 0.5)
 	o.Set("width", ld.i.js.o.Get("width"))
 	o.Set("height", ld.i.js.o.Get("height"))
+	t := fade(o, false, ShowDelayMilli)
 
 	placeholder := ld.i.js.o
 
 	t.Get("onComplete").Call("add", func() {
-		ld.donut.Set("visible", false)
+		ld.i.js.donut.Set("visible", false)
 		ld.anim.Call("stop")
 		placeholder.Set("visible", false)
 	})
@@ -166,7 +164,7 @@ func (b *Browser) NewImage(url string, width, height int) *Image {
 		o.Get("anchor").Call("setTo", 0.5, 0.5)
 		o.Set("width", width)
 		o.Set("height", height)
-
+		i.js.o = o
 		return &i
 	}
 
@@ -184,7 +182,7 @@ func (b *Browser) NewImage(url string, width, height int) *Image {
 
 	ld := b.images.m[url]
 	ld.i = &i
-	ld.donut = donut
+	ld.i.js.donut = donut
 	ld.anim = anim
 	b.images.m[url] = ld
 
@@ -192,6 +190,20 @@ func (b *Browser) NewImage(url string, width, height int) *Image {
 	b.load.Call("start")
 
 	return &i
+}
+
+func (i *Image) Shift(x, y int) {
+	i.js.RLock()
+	defer i.js.RUnlock()
+	i.js.o.Set("x", browser.centerx+x)
+	i.js.o.Set("y", browser.centery+y)
+	i.js.donut.Call("alignIn", i.js.o, phaser.Get("CENTER"))
+}
+
+func (i *Image) Hide(b bool) {
+	i.js.RLock()
+	defer i.js.RUnlock()
+	i.js.o.Set("visible", !b)
 }
 
 // func newButton(url string) (*js.Object, <-chan bool) {
