@@ -2,17 +2,19 @@ package brwsr
 
 import (
 	"sync"
-	"time"
 
 	"github.com/gopherjs/gopherjs/js"
 	"github.com/mrmiguu/jsutil"
+)
+
+const (
+	ShowDelayMilli = 250
 )
 
 var (
 	phaser  *js.Object
 	browser *Browser
 	ready   = make(chan bool, 1)
-	fps     = time.Tick(250 * time.Millisecond)
 )
 
 type Browser struct {
@@ -67,7 +69,6 @@ func New(width, height int) *Browser {
 		game: phaser.Get("Game").New(width, height, phaser.Get("AUTO"), "", js.M{
 			"preload": preload,
 			"create":  create,
-			"render":  render,
 		}),
 	}
 	browser.images.m = make(map[string]struct {
@@ -91,7 +92,8 @@ func preload() {
 	scale.Set("pageAlignVertically", true)
 
 	browser.load = browser.game.Get("load")
-	browser.load.Call("spritesheet", "donut", "loading.png", 25, 25, 8)
+	browser.load.Call("image", "placeholder", "placeholder.png")
+	browser.load.Call("spritesheet", "donut", "loading.png", 32, 32, 8)
 }
 
 func create() {
@@ -100,65 +102,57 @@ func create() {
 	browser.centerx = world.Get("centerX").Int()
 	browser.centery = world.Get("centerY").Int()
 
-	// loading.Set("visible", true)
-	// loading.Set("alpha", 0)
-	// fadeIn := newTween(loading, js.M{"alpha": 1}, 1333)
-	// fadeIn.Call("start")
-
-	// bg = "res/bg.png"
-	// taptostart = "res/taptostart.png"
-	// username = "res/username.png"
-
-	// onLoad, _ := jsutil.Callback()
-
 	browser.load.Get("onFileComplete").Call("add", func(_, key *js.Object) {
-		browser.addImage(key.String())
+		go func() {
+			// time.Sleep(3 * time.Second)
+			browser.addImage(key.String())
+		}()
 	})
-
-	// browser.load.Call("image", bg, bg)
-	// browser.load.Call("spritesheet", taptostart, taptostart, w, h)
-	// browser.load.Call("spritesheet", username, username, 360, 216)
 
 	ready <- true
 	close(ready)
 }
 
-func render() {
-	go renderLoading()
-}
-
-func renderLoading() {
-	<-fps
-	browser.images.RLock()
-	for _, ld := range browser.images.m {
-		browser.game.Get("debug").Call("geom", ld.i.js.o, "rgba(224,224,224,0.5)")
-	}
-	browser.images.RUnlock()
-}
-
 func (b *Browser) addImage(key string) {
 	o := b.add.Call("sprite", b.centerx, b.centery, key)
 	o.Get("anchor").Call("setTo", 0.5, 0.5)
+	t := fade(o, false, ShowDelayMilli)
 
 	b.images.Lock()
-	defer b.images.Unlock()
-
 	ld := b.images.m[key]
+	defer b.images.Unlock()
+	ld.i.js.Lock()
+	defer ld.i.js.Unlock()
+
 	o.Set("width", ld.i.js.o.Get("width"))
 	o.Set("height", ld.i.js.o.Get("height"))
-	ld.donut.Set("visible", false)
-	ld.anim.Call("stop")
 
-	ld.i.js.Lock()
+	placeholder := ld.i.js.o
+
+	t.Get("onComplete").Call("add", func() {
+		ld.donut.Set("visible", false)
+		ld.anim.Call("stop")
+		placeholder.Set("visible", false)
+	})
+
 	ld.i.js.o = o
-	ld.i.js.Unlock()
 }
 
-// func newTween(o *js.Object, params js.M, ms int) *js.Object {
-// 	twn := browser.add.Call("tween", o).Call("to", params, ms)
-// 	twn.Set("frameBased", true)
-// 	return twn
-// }
+func tween(o *js.Object, params js.M, ms int) *js.Object {
+	t := browser.add.Call("tween", o).Call("to", params, ms)
+	t.Set("frameBased", true)
+	defer t.Call("start")
+	return t
+}
+
+func fade(o *js.Object, out bool, ms int) *js.Object {
+	src, dst := 0, 1
+	if out {
+		src, dst = 1, 0
+	}
+	o.Set("alpha", src)
+	return tween(o, js.M{"alpha": dst}, ms)
+}
 
 func (b *Browser) NewImage(url string, width, height int) *Image {
 	var i Image
@@ -168,6 +162,7 @@ func (b *Browser) NewImage(url string, width, height int) *Image {
 
 	if _, exists := b.images.m[url]; exists {
 		o := b.add.Call("sprite", b.centerx, b.centery, url)
+		fade(o, false, ShowDelayMilli)
 		o.Get("anchor").Call("setTo", 0.5, 0.5)
 		o.Set("width", width)
 		o.Set("height", height)
@@ -175,15 +170,17 @@ func (b *Browser) NewImage(url string, width, height int) *Image {
 		return &i
 	}
 
-	i.js.o = phaser.Get("Rectangle").New(
-		b.width/2-width/2, b.height/2-height/2,
-		width, height,
-	)
+	i.js.o = b.add.Call("sprite", b.centerx, b.centery, "placeholder")
+	fade(i.js.o, false, ShowDelayMilli)
+	i.js.o.Get("anchor").Call("setTo", 0.5, 0.5)
+	i.js.o.Set("width", width)
+	i.js.o.Set("height", height)
 
 	donut := b.add.Call("sprite", b.centerx, b.centery, "donut")
+	fade(donut, false, ShowDelayMilli)
 	donut.Get("anchor").Call("setTo", 0.5, 0.5)
 	anim := donut.Get("animations").Call("add", "spin")
-	anim.Call("play", 8, true)
+	anim.Call("play", 12, true)
 
 	ld := b.images.m[url]
 	ld.i = &i
